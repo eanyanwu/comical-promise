@@ -1,0 +1,29 @@
+{
+  "name": "comical-promise",
+  "version": "1.0.0",
+  "description": "A word-for-code Promises/A+ implementation",
+  "main": "comical-promise.js",
+  "directories": {
+    "test": "tests"
+  },
+  "dependencies": {
+    "promises-aplus-tests": "2.1.2"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "node tests/test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hilarious-capital/comical-promise.git"
+  },
+  "keywords": [
+    "promises-aplus"
+  ],
+  "author": "Eze Anyanwu",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/hilarious-capital/comical-promise/issues"
+  },
+  "homepage": "https://github.com/hilarious-capital/comical-promise#readme"
+}
