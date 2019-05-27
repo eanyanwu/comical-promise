@@ -1,4 +1,4 @@
-var Promise = function () {
+var ComicalPromise = function () {
     // Valid Promise states
     var PENDING         = 0;
     var FULFILLED       = 1;
@@ -11,6 +11,9 @@ var Promise = function () {
     var _onFulfilledCallbacks       = [];
     var _onRejectedCallbacks        = [];
 
+    /**
+     * @param {any} value
+     */
     function _fulfill(value) {
         if (_state === PENDING) {
             _value = value;
@@ -19,12 +22,12 @@ var Promise = function () {
             _onFulfilledCallbacks.forEach(function(cb) {
                 callLater(function() { cb(_value) });
             });
-    
-            _onFulfilledCallbacks = [];
-            _onRejectedCallbacks = [];
         }
     }
 
+    /**
+     * @param {any} reason
+     */
     function _reject(reason) {
         if (_state === PENDING) {
             _reason = reason;
@@ -33,90 +36,108 @@ var Promise = function () {
             _onRejectedCallbacks.forEach(function(cb) {
                 callLater(function() { cb(_reason) });
             });
-
-            _onFulfilledCallbacks = [];
-            _onRejectedCallbacks = [];
         }
     }
 
-    function _then(onFulfilled, onRejected) {
-        var promise2 = Promise();
+    /**
+     * @param {string} callbackType
+     * @param {function} callback
+     */
+    function _queueResolutionCallback(callbackType, callback) {
+        // About `callLater`: Used to execute the callback at a time when
+        // the execution stack contains only platform code.
 
         if (_state === PENDING) {
-            if (isFunction(onFulfilled)) {
-                _onFulfilledCallbacks.push(function(value) {
+            if (callbackType === "onFulfilled") {
+                _onFulfilledCallbacks.push(function(result) {
                     callLater(function() {
-                        try {
-                            var result = onFulfilled(value);
-                            resolve(promise2, result);
-                        }
-                        catch (e) {
-                            promise2.reject(e);
-                        }
+                        callback(result);
+                    });
+                });
+            }
+            else if (callbackType === "onRejected") {
+                _onRejectedCallbacks.push(function(result) {
+                    callLater(function() {
+                        callback(result);
                     });
                 });
             }
             else {
-                _onFulfilledCallbacks.push(function(value) {
-                    promise2.fulfill(value);
-                });
-            }
-
-            if (isFunction(onRejected)) {
-                _onRejectedCallbacks.push(function(reason) {
-                    callLater(function() {
-                        try {
-                            var result = onRejected(reason);
-                            resolve(promise2, result);
-                        }
-                        catch (e) {
-                            promise2.reject(e);
-                        }
-                    });
-                });
-            }
-            else {
-                _onRejectedCallbacks.push(function(reason) {
-                    promise2.reject(reason);
-                });
+                throw new Error("Unrecognized callback type");
             }
         }
         else if (_state === FULFILLED) {
-            if (isFunction(onFulfilled)) {
+            if (callbackType === "onFulfilled") {
                 callLater(function() {
-                    try {
-                        var result = onFulfilled(_value);
-                        resolve(promise2, result);
-                    }
-                    catch (e) {
-                        promise2.reject(e);
-                    }
+                    callback(_value);
                 });
-            }
-            else {
-                promise2.fulfill(_value);
             }
         }
-        else if (_state === REJECTED){
-            if (isFunction(onRejected)) {
+        else if (_state === REJECTED) {
+            if (callbackType === "onRejected") {
                 callLater(function() {
-                    try {
-                        var result = onRejected(_reason);
-                        resolve(promise2, result);
-                    }
-                    catch (e) {
-                        promise2.reject(e);
-                    }
+                    callback(_reason);
                 });
-            }
-            else {
-                promise2.reject(_reason);
             }
         }
         else {
-            console.log("Something went very wrong. Unrecognized state", promise1.state);
+            throw new Error("Unrecognized state" + _state);
+        }
+    }
+
+
+    /**
+     * @param {function} onFulfilled
+     * @param {function} onRejected
+     */
+    function _then(onFulfilled, onRejected) {
+        var promise2 = ComicalPromise();
+    
+        if (!isFunction(onFulfilled)) {
+            // If `onFulfilled` is not a function and `promise1` is fulfilled,
+            // `promise2` must be fulfilled with the same value as `promise1`.
+            _queueResolutionCallback("onFulfilled", function(value) {
+                promise2.fulfill(value);
+            });
+        }
+        else {
+            _queueResolutionCallback("onFulfilled", function(value) {
+                try {
+                    // If either `onFulfilled` or `onRejected` returns a value `x`, 
+                    // run the Promise Resolution Procedure [[Resolve]](promise2, x).
+                    resolve(promise2, onFulfilled(value));
+                }
+                catch (e) {
+                    // If either `onFulfilled` or `onRejected` throws an exception `e`, 
+                    // `promise2` must be rejected with `e` as the reason.
+                    promise2.reject(e);
+                }
+            });
         }
 
+        if (!isFunction(onRejected)) {
+            // If `onRejected` is not a function and `promise1` is rejected, 
+            // `promise2` must be rejected with the same reason as `promise1`.
+            _queueResolutionCallback("onRejected", function(reason) {
+                promise2.reject(reason);
+            });
+        }
+        else { 
+            _queueResolutionCallback("onRejected", function(reason) {
+                try {
+                    // If either `onFulfilled` or `onRejected` returns a value `x`, 
+                    // run the Promise Resolution Procedure [[Resolve]](promise2, x).
+                    resolve(promise2, onRejected(reason));
+                }
+                catch (e) {
+                    // If either `onFulfilled` or `onRejected` throws an exception `e`, 
+                    // `promise2` must be rejected with `e` as the reason.
+                    promise2.reject(e);
+                }
+            });
+        }
+
+        // `then` must return a promise
         return promise2;
     }
 
@@ -124,14 +145,23 @@ var Promise = function () {
         fulfill: _fulfill,
         reject: _reject,
         then: _then,
-        comical: true
+        comical: true // sentinel to signal that this is a indeed a comical promise
     };
 };
 
+/**
+ * Promise Resolution Procedure
+ *
+ * @param {ComicalPromise} promise
+ * @param {any} x
+ */
 function resolve(promise, x) {
+    // If `promise` and `x` refer to the same object, 
+    // reject `promise` with a TypeError as the reason.
     if (promise === x) {
         promise.reject(TypeError("Cannot resolve a promsie with iteself"));
     }
+    // If `x` is a promise, adopt its state
     else if (isPromise(x)) {
         x.then(function(value) {
             promise.fulfill(value);
@@ -139,49 +169,79 @@ function resolve(promise, x) {
             promise.reject(reason);
         });
     }
+    // Otherwise, if `x` is an object or function
     else if (isObject(x) || isFunction(x)) {
         var then;
 
         try {
+            // let `then` be `x.then`
             then = x.then
         } catch (e) {
+            // If retrieving the property `x.then` results in a thrown exception `e`, 
+            // reject promise with `e` as the reason.
             promise.reject(e);
             return;
         }
 
+        // if `then` is a function, call it with `x` as `this`, 
+        // first argument `resolvePromise`, and second argument `rejectPromise`  
         if (isFunction(then)) {
+            // If both `resolvePromise` and `rejectPromise` are called, 
+            // or multiple calls to the same argument are made, 
+            // the first call takes precedence, and any further calls are ignored.
             var handlerHasBeenCalled = false;
+
             try {
                 then.call(
                     x,
-                    function(y) {
+                    function resolvePromise(y) {
                         if (!handlerHasBeenCalled) {
+                            // If/when `resolvePromise` is called with a value `y`, 
+                            // run [[Resolve]](promise, y).
                             handlerHasBeenCalled = true;
                             resolve(promise, y);
                         }
                     },
-                    function(r) {
+                    function rejectPromise(r) {
                         if (!handlerHasBeenCalled) {
+                            // If/when `rejectPromise` is called with a reason `r`, 
+                            // reject promise with r.
                             handlerHasBeenCalled = true;
                             promise.reject(r);
                         }
                     }
                 );
             }
+            // If calling then throws an exception e, 
             catch (e) {
+                // If `resolvePromise` or `rejectPromise` have been called, ignore it.
                 if (!handlerHasBeenCalled) {
+                    // Otherwise, reject promise with `e` as the reason.
                     promise.reject(e);
                 }
             }
         }
         else {
+            // If `then` is not a function, fulfill promise with `x`.
             promise.fulfill(x);
         }
     }
     else {
+        // If `x` is not an object or function, fulfill promise with `x`.
         promise.fulfill(x)
     }
 }
+
+ComicalPromise.resolve = resolve;
+
+var test = ComicalPromise();
+console.log(test);
+
+test.then(function(res) {
+    console.log(res);
+});
+
+test.fulfill("Hello");
 
 // Helpers 
 
@@ -209,21 +269,12 @@ function callLater(func) {
     setTimeout(func, 0);
 }
 
-var test = Promise();
-resolve(test, undefined);
-
-test.then(console.log);
-
-
-Promise.resolve = resolve;
-
-
 module.exports.deferred = function() {
-    var p = Promise();
+    var p = ComicalPromise();
     return {
         promise: p,
         resolve: function(value) {
-            Promise.resolve(p, value);
+            ComicalPromise.resolve(p, value);
         },
         reject: function(reason) {
             p.reject(reason);
